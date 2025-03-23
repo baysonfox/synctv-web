@@ -67,6 +67,8 @@ export const roomStore = defineStore("roomStore", () => {
       : "";
   });
 
+
+
   return {
     isDarkMode,
     movies,
@@ -81,6 +83,6 @@ export const roomStore = defineStore("roomStore", () => {
     roomID,
     folder,
     lastFolderId,
-    lastFolderSubPath
+    lastFolderSubPath,
   };
 });
