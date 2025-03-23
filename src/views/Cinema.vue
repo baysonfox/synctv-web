@@ -129,6 +129,7 @@ const sendMsg = (msg: string) => {
 };
 
 const playerOption = computed<options>(() => {
+
   if (!room.currentMovie.base!.url) {
     return {
       url: ""
@@ -141,14 +142,27 @@ const playerOption = computed<options>(() => {
     headers: room.currentMovie.base!.headers,
     p2pZone: settings?.p2pZone,
     plugins: [
-      // 弹幕
+      // TODO 弹幕 重复发送修改
       artplayerPluginDanmuku({
         danmuku: room.currentMovie.base!.danmu || [],
+        lockTime: 5, // 输入框锁定时间，范围在[1 ~ 60]
+
         speed: 8,
+        filter: (danmu) => {
+            // 当返回true后才表示把弹幕加入到弹幕队列
+            const num = 4
+            strLengthLimit(danmu.text, num)
+            return danmu.text.length <= num
+        }, // 弹幕载入前的过滤器
+
         async beforeEmit(danmu: any) {
+            console.log("room.currentMovie.base!.danmu",room.currentMovie.base!.danmu)
+            console.log("danmu:",danmu)
+
           if (danmu.direct) {
             return true;
           }
+
           sendChatText(danmu.text);
           return false;
         }
@@ -480,6 +494,7 @@ const createPeerConnection = (id: string) => {
         console.error("扬声器设置失败:", error);
       });
     }
+
     remoteAudio.style.display = "none";
     remoteAudio.onended = () => {
       document.body.removeChild(remoteAudio);

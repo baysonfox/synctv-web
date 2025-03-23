@@ -366,6 +366,7 @@ const playM3u8 = async (player: HTMLMediaElement, url: string, art: Artplayer) =
   art.hls = hls;
 };
 
+// TODO editing danmaku sender flv.js/ artplayer 弹幕
 const newPlayerOption = (html: HTMLDivElement): Option => {
   const opts: Option = {
     url: Props.options.url,
