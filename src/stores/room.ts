@@ -67,8 +67,6 @@ export const roomStore = defineStore("roomStore", () => {
       : "";
   });
 
-
-
   return {
     isDarkMode,
     movies,
