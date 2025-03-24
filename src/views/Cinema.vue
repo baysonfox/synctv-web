@@ -128,6 +128,7 @@ const sendMsg = (msg: string) => {
   });
 };
 
+let danmukuSender: HTMLInputElement; // 弹幕发射器 DOM
 const playerOption = computed<options>(() => {
   if (!room.currentMovie.base!.url) {
     return {
@@ -146,6 +147,11 @@ const playerOption = computed<options>(() => {
         danmuku: room.currentMovie.base!.danmu || [],
         speed: 8,
         async beforeEmit(danmu: any) {
+          if (!danmukuSender) {
+            danmukuSender = document.querySelector(".apd-input");
+          }
+          strLengthLimit(danmu.text, 4096);
+          danmukuSender.value = "";
           if (danmu.direct) {
             return true;
           }
