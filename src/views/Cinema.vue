@@ -150,7 +150,8 @@ const playerOption = computed<options>(() => {
             return true;
           }
           sendChatText(danmu.text);
-          return false;
+          danmu.text = ""; // 反刷屏 + 反“两条弹幕”（一条到弹幕流 一条本地可见）
+          return true;
         }
       }),
       // WARN: room.currentStatus 变了会导致重载
