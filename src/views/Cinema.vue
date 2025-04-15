@@ -242,12 +242,6 @@ const playerOption = computed<options>(() => {
       artplayerPluginMediaControl()
     ]
   };
-  enum danmuPosition {
-    Rolling = 0,
-    Top = 1,
-    Bottom = 2
-  }
-
   if (room.currentMovie.base!.moreSources) {
     const obj = room.currentMovie.base!.moreSources || [];
     option.plugins!.push(
