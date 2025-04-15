@@ -196,7 +196,6 @@ const sendMenuItems = (event: MouseEvent): ContextMenuItem[] => {
       if (userStore().isLogin) {
         console.log("isLogin");
       }
-      console.log(123);
     }
   };
   // 需要权限的用push加入
@@ -223,10 +222,8 @@ const playerOption = computed<options>(() => {
       // TODO 弹幕 重复发送修改
       artplayerPluginDanmuku({
         danmuku: room.currentMovie.base!.danmu || [],
-
         speed: 8,
         async beforeEmit(danmu: any) {
-          console.log(danmu);
           if (!danmukuSender) {
             danmukuSender = document.querySelector(".apd-input");
           }
