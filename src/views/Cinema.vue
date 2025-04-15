@@ -12,6 +12,7 @@ import type { WatchStopHandle } from "vue";
 import { useWebSocket, useResizeObserver } from "@vueuse/core";
 import { useRouteParams } from "@vueuse/router";
 import { roomStore } from "@/stores/room";
+import { danmuStore } from "@/stores/danmu";
 import { ElNotification, ElMessage } from "element-plus";
 import { useMovieApi } from "@/hooks/useMovie";
 import { useRoomApi, useRoomPermission } from "@/hooks/useRoom";
@@ -31,8 +32,9 @@ import { currentMovieApi } from "@/services/apis/movie";
 import { userStore } from "@/stores/user";
 import { roomInfoApi } from "@/services/apis/room";
 import { artplayerSubtitle } from "@/plugins/subtitle";
-import { sendDanmu, artplayerStreamDanmu } from "@/plugins/danmu";
+import { sendDanmu, artplayerStreamDanmu, newDamuControl } from "@/plugins/danmu";
 import { indexStore } from "@/stores";
+import { handleContextMenu, ContextMenuItem } from "@/components/ContextMenu";
 
 const { settings } = indexStore();
 
@@ -86,15 +88,25 @@ const sendElement = (msg: Message) => {
 // 消息列表
 const chatMsgList = ref<string[]>([]);
 const sendChatText = (msg: string, onSuccess?: () => any, onFailed?: () => any) => {
-  if (msg.length === 0) {
+  // if (msg.length === 0) {
+  //   ElMessage({
+  //     message: "发送的消息不能为空",
+  //     type: "warning"
+  //   });
+  //   if (onFailed) onFailed();
+  //   return;
+  // }
+
+  // 同时处理只包含空格/为空的情况+
+  if (msg.trim().length === 0) {
     ElMessage({
       message: "发送的消息不能为空",
       type: "warning"
     });
+    sendChatMsg_.value = "";
     if (onFailed) onFailed();
     return;
   }
-
   strLengthLimit(msg, 4096);
   sendElement(
     Message.create({
@@ -119,13 +131,39 @@ const sendMsg = (msg: string) => {
       chatMsgList.value.splice(0, chatMsgList.value.length - MAX_MESSAGE_COUNT);
     }
     // 将新消息存储到 sessionStorage
-    sessionStorage.setItem(`chatMessages-${roomID}`, JSON.stringify(chatMsgList.value));
+    sessionStorage.setItem(`chatMessages-${roomID.value}`, JSON.stringify(chatMsgList.value));
   });
 
   // 确保聊天区域滚动到底部
   nextTick(() => {
     if (chatArea.value) chatArea.value.scrollTop = chatArea.value.scrollHeight;
   });
+};
+
+const sendMenuItems = (event: MouseEvent): ContextMenuItem[] => {
+  const message = event.currentTarget.dataset.message || "";
+  const CopyDanmu: ContextMenuItem = {
+    label: "复制弹幕",
+    onClick: (): void => {
+      // 显式声明返回值类型为 void
+      const match = message.match(/:(.*?)(?:\s*<small>|$)/);
+      if (match && match[1]) {
+        const msgBody = match[1].trim();
+        navigator.clipboard
+          .writeText(msgBody)
+          .then(() => {
+            console.log("消息已复制:", msgBody);
+          })
+          .catch((err) => {
+            console.error("复制失败:", err);
+          });
+      } else {
+        console.error("不合法弹幕");
+      }
+    }
+  };
+
+  return [CopyDanmu];
 };
 
 let danmukuSender: HTMLInputElement; // 弹幕发射器 DOM
@@ -149,6 +187,7 @@ const playerOption = computed<options>(() => {
 
         speed: 8,
         async beforeEmit(danmu: any) {
+          console.log(danmu);
           if (!danmukuSender) {
             danmukuSender = document.querySelector(".apd-input");
           }
@@ -161,11 +200,17 @@ const playerOption = computed<options>(() => {
           return false;
         }
       }),
+      newDamuControl(),
       // WARN: room.currentStatus 变了会导致重载
       newSyncPlugin(sendElement, room.currentStatus, () => room.currentExpireId),
       artplayerPluginMediaControl()
     ]
   };
+  enum danmuPosition {
+    Rolling = 0,
+    Top = 1,
+    Bottom = 2
+  }
 
   if (room.currentMovie.base!.moreSources) {
     const obj = room.currentMovie.base!.moreSources || [];
@@ -565,9 +610,15 @@ const handleElementMessage = (msg: Message) => {
       const senderName = msg.sender?.username;
       const messageContent = `${senderName}: ${msg.chatContent}`;
       const messageWithTime = `${messageContent} <small>[${currentTime}]</small>`;
+
+      const danmukuContent = danmuStore().displayUsername
+        ? `${senderName}: ${msg.chatContent}`
+        : `${msg.chatContent}`;
+
       // 添加消息到消息列表
       sendMsg(messageWithTime);
-      sendDanmu({ text: messageContent, border: true }, player);
+      // 发送弹幕 边框设置 默认无边框
+      sendDanmu({ text: danmukuContent, border: danmuStore().danmuBorder }, player);
       break;
     }
     case MessageType.STATUS:
@@ -704,9 +755,13 @@ onMounted(async () => {
   }
 
   // 从 sessionStorage 获取存储的聊天消息
-  const storedMessages = sessionStorage.getItem(`chatMessages-${roomID}`);
+  const storedMessages = sessionStorage.getItem(`chatMessages-${roomID.value}`);
   if (storedMessages) {
     chatMsgList.value = JSON.parse(storedMessages);
+    // 确保聊天区域滚动到底部
+    await nextTick(() => {
+      if (chatArea.value) chatArea.value.scrollTop = chatArea.value.scrollHeight;
+    });
   }
 
   // 启动websocket连接
@@ -853,7 +908,12 @@ onBeforeUnmount(() => {
         <div class="card-body mb-2">
           <div class="chatArea" ref="chatArea">
             <div class="message" v-for="item in chatMsgList" :key="item">
-              <div v-html="item"></div>
+              <div
+                v-html="item"
+                class="hover:dark:bg-neutral-700 hover:bg-slate-200 px-2 rounded-sm duration-150"
+                :data-message="item"
+                @contextmenu="(event) => handleContextMenu(event, sendMenuItems)"
+              ></div>
             </div>
           </div>
         </div>
