@@ -17,13 +17,8 @@ export const danmuStore = defineStore("danmukuStore", () => {
     return _maxLength;
   })();
 
-  // const chatMsgListContextMenu = (props, context) => {
-  //     return h(`h${props.level}`, context.attrs, context.slots)
-  // }
-
   return {
     danmuBorder,
     displayUsername
-    // chatMsgListContextMenu
   };
 });

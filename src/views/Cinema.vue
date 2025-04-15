@@ -140,30 +140,69 @@ const sendMsg = (msg: string) => {
   });
 };
 
+// 右键菜单子项
 const sendMenuItems = (event: MouseEvent): ContextMenuItem[] => {
-  const message = event.currentTarget.dataset.message || "";
+  // 用户名
+  // const { info } = userStore();
+  // const username = info.value.username;
   const CopyDanmu: ContextMenuItem = {
     label: "复制弹幕",
-    onClick: (): void => {
-      // 显式声明返回值类型为 void
-      const match = message.match(/:(.*?)(?:\s*<small>|$)/);
+    onClick: async (): Promise<void> => {
+      const targetElement = event.target as HTMLElement;
+      const message = targetElement.closest("div")?.innerHTML || "";
+      console.log(message);
+      const match = message.match(/:\s*(.*?)(?=\s*<small>|$)/);
+      console.log(match);
       if (match && match[1]) {
-        const msgBody = match[1].trim();
-        navigator.clipboard
-          .writeText(msgBody)
-          .then(() => {
-            console.log("消息已复制:", msgBody);
-          })
-          .catch((err) => {
-            console.error("复制失败:", err);
-          });
+        await navigator.clipboard.writeText(match[1].trim());
+        ElMessage({
+          message: "已复制",
+          type: "success"
+        });
+        console.log("消息已复制:", match[1].trim());
       } else {
+        ElMessage({
+          message: "不合法弹幕",
+          type: "warning"
+        });
         console.error("不合法弹幕");
       }
     }
   };
+  const MenuItems = [CopyDanmu];
 
-  return [CopyDanmu];
+  // const RepeatDanmu: ContextMenuItem = {
+  //   label: "弹幕 +1",
+  //   onClick: async (): Promise<void> => {
+  //     const formatMessage = (content: string) => {
+  //       const currentTime = formatTime(new Date());
+  //       const messageContent = `${username}: ${content}`;
+  //       return {
+  //         withTime: `${messageContent} <small>[${currentTime}]</small>`,
+  //         danmu: danmuStore().displayUsername ? messageContent : content
+  //       };
+  //     };
+  //     const chatContent = match[1].trim();
+  //     const { withTime, danmu } = formatMessage(chatContent);
+  //    // 发送弹幕
+  //     sendMsg(withTime);
+  //     sendDanmu({ text: danmu, border: danmuStore().danmuBorder }, player);
+  //   }
+  // };
+
+  const BanUser: ContextMenuItem = {
+    label: "封禁",
+    onClick: (): void => {
+      if (userStore().isLogin) {
+        console.log("isLogin");
+      }
+      console.log(123);
+    }
+  };
+  // 需要权限的用push加入
+  // MenuItems.push(BanUser);
+
+  return MenuItems;
 };
 
 let danmukuSender: HTMLInputElement; // 弹幕发射器 DOM
@@ -907,12 +946,15 @@ onBeforeUnmount(() => {
         </div>
         <div class="card-body mb-2">
           <div class="chatArea" ref="chatArea">
-            <div class="message" v-for="item in chatMsgList" :key="item">
+            <div
+              class="message"
+              v-for="item in chatMsgList"
+              :key="item"
+              @contextmenu.capture="(event) => handleContextMenu(event, sendMenuItems)"
+            >
               <div
                 v-html="item"
-                class="hover:dark:bg-neutral-700 hover:bg-slate-200 px-2 rounded-sm duration-150"
-                :data-message="item"
-                @contextmenu="(event) => handleContextMenu(event, sendMenuItems)"
+                class="dark:hover:bg-neutral-700 hover:bg-white px-2 rounded-sm duration-150"
               ></div>
             </div>
           </div>
