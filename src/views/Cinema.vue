@@ -120,7 +120,7 @@ const handleSend = () => {
     return;
   }
   isSending.value = true;
-  cooldownSeconds.value = 3; // Initial cooldown time
+  cooldownSeconds.value = 5; // Initial cooldown time
 
   // Call the original send function
   sendChatText(sendChatMsg_.value, onSendSuccess);
