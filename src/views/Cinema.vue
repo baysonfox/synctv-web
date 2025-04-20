@@ -110,6 +110,34 @@ const onSendSuccess = () => {
   sendChatMsg_.value = "";
 };
 
+const isSending = ref(false);
+const cooldownSeconds = ref(5);
+let cooldownTimer: number | null = null;
+
+const handleSend = () => {
+  if (isSending.value || !sendChatMsg_.value.trim()) {
+    // Don't send if already sending or message is empty
+    return;
+  }
+  isSending.value = true;
+  cooldownSeconds.value = 3; // Initial cooldown time
+
+  // Call the original send function
+  sendChatText(sendChatMsg_.value, onSendSuccess);
+  // Note: Cooldown starts immediately after initiating send,
+  // regardless of success. onSendSuccess handles clearing the input.
+
+  // Start the countdown timer
+  cooldownTimer = window.setInterval(() => {
+    cooldownSeconds.value -= 1;
+    if (cooldownSeconds.value <= 0) {
+      clearInterval(cooldownTimer!);
+      isSending.value = false;
+      cooldownTimer = null;
+    }
+  }, 1000);
+};
+
 const MAX_MESSAGE_COUNT = 64; // 设定聊天记录的最大长度
 const sendMsg = (msg: string) => {
   chatMsgList.value.push(msg);
@@ -150,13 +178,13 @@ const playerOption = computed<options>(() => {
             return true;
           }
           sendChatText(danmu.text);
-          danmu.text = ""; // 反刷屏 + 反“两条弹幕”（一条到弹幕流 一条本地可见）
+          danmu.text = "";
           return true;
         }
       }),
       // WARN: room.currentStatus 变了会导致重载
       newSyncPlugin(sendElement, room.currentStatus, () => room.currentExpireId),
-      artplayerPluginMediaControl(),
+      artplayerPluginMediaControl()
     ]
   };
 
@@ -856,17 +884,15 @@ onBeforeUnmount(() => {
         >
           <input
             type="text"
-            @keyup.enter="() => sendChatText(sendChatMsg_, onSendSuccess)"
+            @keyup.enter="handleSend"
             v-model="sendChatMsg_"
-            placeholder="按 Enter 键即可发送..."
+            :disabled="isSending"
+            :placeholder="isSending ? `冷却中... ${cooldownSeconds}S` : '按 Enter 键即可发送...'"
             class="l-input w-full bg-transparent"
             autocomplete="off"
           />
-          <button
-            class="btn w-24 m-2.5 ml-0"
-            @click="() => sendChatText(sendChatMsg_, onSendSuccess)"
-          >
-            发送
+          <button class="btn w-24 m-2.5 ml-0" :disabled="isSending" @click="handleSend">
+            {{ isSending ? `${cooldownSeconds}S` : "发送" }}
           </button>
         </div>
       </div>
