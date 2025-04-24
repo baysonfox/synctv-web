@@ -12,6 +12,7 @@ import type { WatchStopHandle } from "vue";
 import { useWebSocket, useResizeObserver } from "@vueuse/core";
 import { useRouteParams } from "@vueuse/router";
 import { roomStore } from "@/stores/room";
+import { danmuStore } from "@/stores/danmu";
 import { ElNotification, ElMessage } from "element-plus";
 import { useMovieApi } from "@/hooks/useMovie";
 import { useRoomApi, useRoomPermission } from "@/hooks/useRoom";
@@ -31,8 +32,11 @@ import { currentMovieApi } from "@/services/apis/movie";
 import { userStore } from "@/stores/user";
 import { roomInfoApi } from "@/services/apis/room";
 import { artplayerSubtitle } from "@/plugins/subtitle";
-import { sendDanmu, artplayerStreamDanmu } from "@/plugins/danmu";
+import { artplayerStreamDanmu, newDamuControl, sendDanmu } from "@/plugins/danmu";
 import { indexStore } from "@/stores";
+import { ContextMenuItem, handleContextMenu } from "@/components/ContextMenu";
+import { ROLE } from "@/types/User";
+import { banUserApi, unbanUserApi, userListApi } from "@/services/apis/admin";
 
 const { settings } = indexStore();
 
@@ -86,15 +90,25 @@ const sendElement = (msg: Message) => {
 // 消息列表
 const chatMsgList = ref<string[]>([]);
 const sendChatText = (msg: string, onSuccess?: () => any, onFailed?: () => any) => {
-  if (msg.length === 0) {
+  // if (msg.length === 0) {
+  //   ElMessage({
+  //     message: "发送的消息不能为空",
+  //     type: "warning"
+  //   });
+  //   if (onFailed) onFailed();
+  //   return;
+  // }
+
+  // 同时处理只包含空格/为空的情况+
+  if (msg.trim().length === 0) {
     ElMessage({
       message: "发送的消息不能为空",
       type: "warning"
     });
+    sendChatMsg_.value = "";
     if (onFailed) onFailed();
     return;
   }
-
   strLengthLimit(msg, 4096);
   sendElement(
     Message.create({
@@ -147,13 +161,149 @@ const sendMsg = (msg: string) => {
       chatMsgList.value.splice(0, chatMsgList.value.length - MAX_MESSAGE_COUNT);
     }
     // 将新消息存储到 sessionStorage
-    sessionStorage.setItem(`chatMessages-${roomID}`, JSON.stringify(chatMsgList.value));
+    sessionStorage.setItem(`chatMessages-${roomID.value}`, JSON.stringify(chatMsgList.value));
   });
 
   // 确保聊天区域滚动到底部
   nextTick(() => {
     if (chatArea.value) chatArea.value.scrollTop = chatArea.value.scrollHeight;
   });
+};
+// 右键菜单子项
+const sendMenuItems = (event: MouseEvent): ContextMenuItem[] => {
+  // 用户名
+  const { info } = userStore();
+  const username = info.value?.username;
+  const role = info.value?.role;
+
+  const targetElement = event.target as HTMLElement;
+  const message = targetElement.closest("div")?.innerHTML || "";
+
+  const CopyDanmu: ContextMenuItem = {
+    label: "复制弹幕",
+    onClick: async (): Promise<void> => {
+      console.log(message);
+      const match = message.match(/:\s*(.*?)(?=\s*<small>|$)/);
+      console.log(match);
+      if (match && match[1]) {
+        await navigator.clipboard.writeText(match[1].trim());
+        ElMessage({
+          message: "已复制",
+          type: "success"
+        });
+        console.log("消息已复制:", match[1].trim());
+      } else {
+        ElMessage({
+          message: "不合法弹幕",
+          type: "warning"
+        });
+        console.error("不合法弹幕");
+      }
+    }
+  };
+  const MenuItems = [CopyDanmu];
+  const { state, execute: reqUserListApi, isLoading: userListLoading } = userListApi();
+
+  if (role === ROLE.Admin || ROLE.Root) {
+    const BanUser: ContextMenuItem = {
+      label: "封禁",
+      onClick: async (): Promise<void> => {
+        if (!userStore().isLogin) {
+          console.log("未登录");
+          ElMessage({
+            message: "不合法操作",
+            type: "warning"
+          });
+          return;
+        }
+        const matchResult = message.match(/^(\w+):/);
+        const senderName: string = matchResult ? matchResult[1] : "$2a$10$haJ/n7YMU";
+
+        // 根据用户名获取用户信息
+        const getSenderInfo = async () => {
+          try {
+            return await reqUserListApi({
+              headers: {
+                Authorization: token.value
+              },
+              params: {
+                page: 1,
+                max: 32,
+                sort: "createdAt",
+                order: "desc",
+                role: "",
+                search: "name",
+                keyword: senderName
+              }
+            });
+          } catch (err: any) {
+            console.error(err);
+            ElNotification({
+              title: "获取用户信息失败",
+              type: "error",
+              message: err.response.data.error || err.message
+            });
+          }
+        };
+        const res = await getSenderInfo();
+        const senderInfo = res.value.list[0];
+        console.log(senderInfo);
+        // 封禁 / 解封 用户
+        const banUser = async (id: string, is: boolean) => {
+          try {
+            const config = {
+              headers: {
+                Authorization: token.value
+              },
+              data: {
+                id: id
+              }
+            };
+            is ? await banUserApi().execute(config) : await unbanUserApi().execute(config);
+            ElNotification({
+              title: `${is ? "封禁" : "解封"}成功`,
+              type: "success"
+            });
+            await getSenderInfo();
+          } catch (err: any) {
+            console.error(err);
+            ElNotification({
+              title: "错误",
+              type: "error",
+              message: err.response.data.error || err.message
+            });
+          }
+        };
+        await banUser(senderInfo.id, true);
+      }
+    };
+    // 需要权限的用push加入
+    MenuItems.push(BanUser);
+  }
+
+  // const RepeatDanmu: ContextMenuItem = {
+  //   label: "弹幕 +1",
+  //   onClick: async (): Promise<void> => {
+  //     const formatMessage = (content: string) => {
+  //       const currentTime = formatTime(new Date());
+  //       const messageContent = `${username}: ${content}`;
+  //       return {
+  //         withTime: `${messageContent} <small>[${currentTime}]</small>`,
+  //         danmu: danmuStore().displayUsername ? messageContent : content
+  //       };
+  //     };
+  //     const chatContent = match[1].trim();
+  //     const { withTime, danmu } = formatMessage(chatContent);
+  //    // 发送弹幕
+  //     sendMsg(withTime);
+  //     sendDanmu({ text: danmu, border: danmuStore().danmuBorder }, player);
+  //   }
+  // };
+
+  console.log(info.value?.role);
+  console.log(ROLE[info.value?.role]);
+  // const isAdmin = computed(() => info.value?.role === ROLE.Admin);
+  return MenuItems;
 };
 
 const playerOption = computed<options>(() => {
@@ -170,10 +320,13 @@ const playerOption = computed<options>(() => {
     p2pZone: settings?.p2pZone,
     plugins: [
       // 弹幕
+      // 弹幕 重复发送修改
       artplayerPluginDanmuku({
         danmuku: room.currentMovie.base!.danmu || [],
         speed: 8,
+        lockTime: 1, // 默认是 5 秒 最短只能为 1 秒
         async beforeEmit(danmu: any) {
+          strLengthLimit(danmu.text, 4096);
           if (danmu.direct) {
             return true;
           }
@@ -182,12 +335,12 @@ const playerOption = computed<options>(() => {
           return true;
         }
       }),
+      newDamuControl(),
       // WARN: room.currentStatus 变了会导致重载
       newSyncPlugin(sendElement, room.currentStatus, () => room.currentExpireId),
       artplayerPluginMediaControl()
     ]
   };
-
   if (room.currentMovie.base!.moreSources) {
     const obj = room.currentMovie.base!.moreSources || [];
     option.plugins!.push(
@@ -509,6 +662,7 @@ const createPeerConnection = (id: string) => {
         console.error("扬声器设置失败:", error);
       });
     }
+
     remoteAudio.style.display = "none";
     remoteAudio.onended = () => {
       document.body.removeChild(remoteAudio);
@@ -585,9 +739,15 @@ const handleElementMessage = (msg: Message) => {
       const senderName = msg.sender?.username;
       const messageContent = `${senderName}: ${msg.chatContent}`;
       const messageWithTime = `${messageContent} <small>[${currentTime}]</small>`;
+
+      const danmukuContent = danmuStore().displayUsername
+        ? `${senderName}: ${msg.chatContent}`
+        : `${msg.chatContent}`;
+
       // 添加消息到消息列表
       sendMsg(messageWithTime);
-      sendDanmu({ text: messageContent, border: true }, player);
+      // 发送弹幕 边框设置 默认无边框
+      sendDanmu({ text: danmukuContent, border: danmuStore().danmuBorder }, player);
       break;
     }
     case MessageType.STATUS:
@@ -724,9 +884,13 @@ onMounted(async () => {
   }
 
   // 从 sessionStorage 获取存储的聊天消息
-  const storedMessages = sessionStorage.getItem(`chatMessages-${roomID}`);
+  const storedMessages = sessionStorage.getItem(`chatMessages-${roomID.value}`);
   if (storedMessages) {
     chatMsgList.value = JSON.parse(storedMessages);
+    // 确保聊天区域滚动到底部
+    await nextTick(() => {
+      if (chatArea.value) chatArea.value.scrollTop = chatArea.value.scrollHeight;
+    });
   }
 
   // 启动websocket连接
@@ -870,10 +1034,25 @@ onBeforeUnmount(() => {
             </el-button>
           </div>
         </div>
-        <div class="card-body mb-2">
+        <div
+          class="card-body mb-2"
+          @contextmenu.capture="
+            (e) => {
+              e.preventDefault();
+            }
+          "
+        >
           <div class="chatArea" ref="chatArea">
-            <div class="message" v-for="item in chatMsgList" :key="item">
-              <div v-html="item"></div>
+            <div
+              class="message"
+              v-for="item in chatMsgList"
+              :key="item"
+              @contextmenu.capture="(event) => handleContextMenu(event, sendMenuItems)"
+            >
+              <div
+                v-html="item"
+                class="dark:hover:bg-neutral-700 hover:bg-white px-2 rounded-sm duration-150"
+              ></div>
             </div>
           </div>
         </div>
