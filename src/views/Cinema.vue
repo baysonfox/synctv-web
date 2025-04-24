@@ -204,7 +204,6 @@ const sendMenuItems = (event: MouseEvent): ContextMenuItem[] => {
   return MenuItems;
 };
 
-let danmukuSender: HTMLInputElement; // 弹幕发射器 DOM
 const playerOption = computed<options>(() => {
   if (!room.currentMovie.base!.url) {
     return {
@@ -219,21 +218,19 @@ const playerOption = computed<options>(() => {
     p2pZone: settings?.p2pZone,
     plugins: [
       // 弹幕
-      // TODO 弹幕 重复发送修改
+      // 弹幕 重复发送修改
       artplayerPluginDanmuku({
         danmuku: room.currentMovie.base!.danmu || [],
         speed: 8,
+        lockTime: 1, // 默认是 5 秒 最短只能为 1 秒
         async beforeEmit(danmu: any) {
-          if (!danmukuSender) {
-            danmukuSender = document.querySelector(".apd-input");
-          }
           strLengthLimit(danmu.text, 4096);
-          danmukuSender.value = "";
           if (danmu.direct) {
             return true;
           }
           sendChatText(danmu.text);
-          return false;
+          danmu.text = "";
+          return true;
         }
       }),
       newDamuControl(),
