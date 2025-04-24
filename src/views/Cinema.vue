@@ -32,9 +32,11 @@ import { currentMovieApi } from "@/services/apis/movie";
 import { userStore } from "@/stores/user";
 import { roomInfoApi } from "@/services/apis/room";
 import { artplayerSubtitle } from "@/plugins/subtitle";
-import { sendDanmu, artplayerStreamDanmu, newDamuControl } from "@/plugins/danmu";
+import { artplayerStreamDanmu, newDamuControl, sendDanmu } from "@/plugins/danmu";
 import { indexStore } from "@/stores";
-import { handleContextMenu, ContextMenuItem } from "@/components/ContextMenu";
+import { ContextMenuItem, handleContextMenu } from "@/components/ContextMenu";
+import { ROLE } from "@/types/User";
+import { banUserApi, unbanUserApi, userListApi } from "@/services/apis/admin";
 
 const { settings } = indexStore();
 
@@ -139,17 +141,19 @@ const sendMsg = (msg: string) => {
     if (chatArea.value) chatArea.value.scrollTop = chatArea.value.scrollHeight;
   });
 };
-
 // 右键菜单子项
 const sendMenuItems = (event: MouseEvent): ContextMenuItem[] => {
   // 用户名
-  // const { info } = userStore();
-  // const username = info.value.username;
+  const { info } = userStore();
+  const username = info.value?.username;
+  const role = info.value?.role;
+
+  const targetElement = event.target as HTMLElement;
+  const message = targetElement.closest("div")?.innerHTML || "";
+
   const CopyDanmu: ContextMenuItem = {
     label: "复制弹幕",
     onClick: async (): Promise<void> => {
-      const targetElement = event.target as HTMLElement;
-      const message = targetElement.closest("div")?.innerHTML || "";
       console.log(message);
       const match = message.match(/:\s*(.*?)(?=\s*<small>|$)/);
       console.log(match);
@@ -170,6 +174,84 @@ const sendMenuItems = (event: MouseEvent): ContextMenuItem[] => {
     }
   };
   const MenuItems = [CopyDanmu];
+  const { state, execute: reqUserListApi, isLoading: userListLoading } = userListApi();
+
+  if (role === ROLE.Admin || ROLE.Root) {
+    const BanUser: ContextMenuItem = {
+      label: "封禁",
+      onClick: async (): Promise<void> => {
+        if (!userStore().isLogin) {
+          console.log("未登录");
+          ElMessage({
+            message: "不合法操作",
+            type: "warning"
+          });
+          return;
+        }
+        const matchResult = message.match(/^(\w+):/);
+        const senderName: string = matchResult ? matchResult[1] : "$2a$10$haJ/n7YMU";
+
+        // 根据用户名获取用户信息
+        const getSenderInfo = async () => {
+          try {
+            return await reqUserListApi({
+              headers: {
+                Authorization: token.value
+              },
+              params: {
+                page: 1,
+                max: 32,
+                sort: "createdAt",
+                order: "desc",
+                role: "",
+                search: "name",
+                keyword: senderName
+              }
+            });
+          } catch (err: any) {
+            console.error(err);
+            ElNotification({
+              title: "获取用户信息失败",
+              type: "error",
+              message: err.response.data.error || err.message
+            });
+          }
+        };
+        const res = await getSenderInfo();
+        const senderInfo = res.value.list[0];
+        console.log(senderInfo);
+        // 封禁 / 解封 用户
+        const banUser = async (id: string, is: boolean) => {
+          try {
+            const config = {
+              headers: {
+                Authorization: token.value
+              },
+              data: {
+                id: id
+              }
+            };
+            is ? await banUserApi().execute(config) : await unbanUserApi().execute(config);
+            ElNotification({
+              title: `${is ? "封禁" : "解封"}成功`,
+              type: "success"
+            });
+            await getSenderInfo();
+          } catch (err: any) {
+            console.error(err);
+            ElNotification({
+              title: "错误",
+              type: "error",
+              message: err.response.data.error || err.message
+            });
+          }
+        };
+        await banUser(senderInfo.id, true);
+      }
+    };
+    // 需要权限的用push加入
+    MenuItems.push(BanUser);
+  }
 
   // const RepeatDanmu: ContextMenuItem = {
   //   label: "弹幕 +1",
@@ -190,17 +272,9 @@ const sendMenuItems = (event: MouseEvent): ContextMenuItem[] => {
   //   }
   // };
 
-  const BanUser: ContextMenuItem = {
-    label: "封禁",
-    onClick: (): void => {
-      if (userStore().isLogin) {
-        console.log("isLogin");
-      }
-    }
-  };
-  // 需要权限的用push加入
-  // MenuItems.push(BanUser);
-
+  console.log(info.value?.role);
+  console.log(ROLE[info.value?.role]);
+  // const isAdmin = computed(() => info.value?.role === ROLE.Admin);
   return MenuItems;
 };
 
@@ -932,7 +1006,14 @@ onBeforeUnmount(() => {
             </el-button>
           </div>
         </div>
-        <div class="card-body mb-2">
+        <div
+          class="card-body mb-2"
+          @contextmenu.capture="
+            (e) => {
+              e.preventDefault();
+            }
+          "
+        >
           <div class="chatArea" ref="chatArea">
             <div
               class="message"
